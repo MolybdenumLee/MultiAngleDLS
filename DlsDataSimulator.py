@@ -27,7 +27,7 @@ class DlsDataSim:
         wavelength=633,           # nanometer
         temperature=298,          # Kelvin
         viscosity=0.89,           # cP
-        RI_liquid=1.33,
+        RI_liquid=1.331,
         RI_particle_real=1.5875,
         RI_particle_img=0,
     ):
@@ -95,6 +95,9 @@ class DlsDataSim:
         k = 1 / np.sum(CN)
         CN = CN.reshape((CN.size, 1))
         g1 = k * np.matmul(Exp, CN)
+        self.Exp = Exp
+        self.C = C
+        self.intensity = np.sum(CN)
         self.g1 = g1
         return g1
 
@@ -107,11 +110,11 @@ class DlsDataSim:
 
 
 if __name__ == "__main__":
-    d = np.array([100, 200, 500])
-    N = np.array([1, 1, 1])
+    d = np.array([100, 220, 360])
+    N = np.array([50, 2, 1])
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    for angle in range(30, 160, 10):
+    for angle in range(30, 100, 10):
         data = DlsDataSim(d, N, angle=angle)
         data.genG1()
         ax.plot(data.tau, data.g1, '-', label=str(angle)+'degree')

@@ -66,7 +66,7 @@ class DlsData:
         self.viscosity = float(alldata[11][:-1]) # in centipoise
         self.RI_liquid = float(alldata[13][:-1])
         self.RI_particle_real = float(alldata[14][:-1])
-        self.RI_particle_img = float(alldata[14][:-1])
+        self.RI_particle_img = float(alldata[15][:-1])
         self.baseline_calculated = float(alldata[21][:-1])
         self.baseline_measured = float(alldata[22][:-1])
         if baseline == 'default':
