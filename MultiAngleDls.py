@@ -94,7 +94,7 @@ class multiAngleDls:
 
 
 
-    def _singleAngleProcess(self, dlsData):
+    def _singleAngleProcess_g1star(self, dlsData):
         kb = 1.38064852e-23                     # Boltzmann Constant
 
         d = self.d * 1e-9                       # in meter
@@ -143,28 +143,99 @@ class multiAngleDls:
             for i in range(Exp.shape[1]):
                 F_theta[j,i] = Exp[j,i] * C_theta[i]
         
-        return g1_star_theta, F_theta, Exp, C_theta
+        return g1_star_theta, F_theta, C_theta
 
-    def _multiAngleProcess(self):
+    def _multiAngleProcess_g1star(self):
         g1_star_theta_list = []
         F_theta_list = []
-        Exp_list = []
         C_list = []
         for dlsData in self.dlsDataList:
-            g1_star_theta, F_theta, Exp, C = self._singleAngleProcess(dlsData)
+            g1_star_theta, F_theta, C = self._singleAngleProcess_g1star(dlsData)
             g1_star_theta_list.append(g1_star_theta)
             F_theta_list.append(F_theta)
-            Exp_list.append(Exp)
             C_list.append(C)
         g1_star_R = np.vstack(g1_star_theta_list)
         F_R = np.vstack(F_theta_list)
         self.g1_star_theta_list = g1_star_theta_list
         self.F_theta_list = F_theta_list
-        self.Exp_list = Exp_list
         self.C_list = C_list
         self.g1_star_R = g1_star_R
         self.F_R = F_R
         return g1_star_R, F_R
+
+    def _singleAngleProcess_g1square(self, dlsData):
+        kb = 1.38064852e-23                     # Boltzmann Constant
+
+        d = self.d * 1e-9                       # in meter
+        theta = dlsData.angle / 180 * np.pi     # rad
+        Lambda = dlsData.wavelength * 1e-9      # in meter
+        T = dlsData.temperature                 # in Kelvin
+        eta = dlsData.viscosity * 1e-3          # viscosity, in Pa.s
+        n =dlsData.RI_liquid
+        Int = dlsData.intensity                 # intensity, should be cps
+
+        g1square = dlsData.g1square
+        g1square = g1square.reshape((g1square.size, 1))           # shape=(m, 1)
+        tau = dlsData.tau * 1e-6                # delay time, in second
+        tau = tau.reshape((tau.size, 1))         # shape=(m, 1)
+
+        Gamma0 = (16 * np.pi * n**2 * kb * T)/(3 * Lambda**2 * eta) * np.sin(theta/2)**2
+
+        temp1 = -1 * Gamma0 * tau
+        temp2 = 1 / d
+        temp1 = temp1.reshape((len(tau), 1))
+        temp2 = temp2.reshape((1, len(d)))
+        Exp = np.exp(np.matmul(temp1, temp2))
+
+        C_theta = [] # intensity from Mie theory
+        # the parameters below only used in mie scattering calculations
+        d_nano = self.d                   # in nanometer
+        angle = theta                     # in rad
+        m_particle = complex(dlsData.RI_particle_real, dlsData.RI_particle_img)
+        wavelength = dlsData.wavelength   # in nanometer
+        for di in d_nano:
+            mieInt = self._calcMieScatt(angle, m_particle, wavelength, di, n, polarization='perpendicular')
+            C_theta.append(mieInt)
+        C_theta = np.array(C_theta) 
+        
+        F_theta = np.ones_like(Exp)
+        for j in range(Exp.shape[0]):
+            for i in range(Exp.shape[1]):
+                F_theta[j,i] = Exp[j,i] * C_theta[i]
+        
+        return g1square, F_theta, C_theta
+
+    def _multiAngleProcess_g1square(self):
+        g1square_theta_list = []
+        F_theta_list = []
+        C_theta_list = []
+        for dlsData in self.dlsDataList:
+            g1square_theta, F_theta, C_theta = self._singleAngleProcess_g1square(dlsData)
+            g1square_theta_list.append(g1square_theta)
+            F_theta_list.append(F_theta)
+            C_theta_list.append(C_theta)
+        g1square_R = np.vstack(g1square_theta_list)
+        F_R = np.vstack(F_theta_list)
+        self.g1square_theta_list = g1square_theta_list
+        self.F_theta_list = F_theta_list
+        self.C_theta_list = C_theta_list
+        self.g1square_R = g1square_R
+        self.F_R = F_R
+        return g1square_R, F_R, C_theta_list
+
+    def undeterminedMethod(self):
+        
+        def objectFunction(N, F_R, C_theta_list, g1square_R, tau_num):
+            k_theta_list = [1/np.sum(Ci*N) for Ci in C_theta_list]
+            K_theta_list = [ki*np.ones((tau_num, 1)) for ki in k_theta_list]
+            K_R = np.vstack(K_theta_list)
+            return np.sum( ( (K_R * np.matmul(F_R, N))**2 - g1square_R )**2 )
+
+        self._multiAngleProcess_g1square()
+        # minimize(objectFunction) to find N
+        self.N = np.zeros_like(self.d)
+
+
 
     def solveNnls(self):
         self._multiAngleProcess()
@@ -188,7 +259,7 @@ class multiAngleDls:
         self.N_star = result.x
 
 
-    def plotResult(self):
+    def plotResult_g1star(self):
         fig = plt.figure()
         ax1 = fig.add_subplot(211)
         ax2 = fig.add_subplot(212)
@@ -228,37 +299,30 @@ class multiAngleDls:
 
         plt.show()
 
-    def plotResult2(self):
-        fig = plt.figure(figsize=(16,9), dpi=100)
-        ax1 = fig.add_subplot(111)
-        plot_g1_star = False
-        if not plot_g1_star:
-            for i in range(self.angleNum):
-                dlsData = self.dlsDataList[i]
-                tau = dlsData.tau
-                g1 = dlsData.g1
-                ax1.plot(tau, g1, '.', label='{}° exp'.format(int(dlsData.angle)))
-                g1_star = np.matmul(self.F_theta_list[i], self.N_star)
-                # test
-                # 用sumCN来归一化能够保证归一化的效果，但是其实实际拟合中并不是这么归一化的
-                # 实际中是使用的intensity归一化的
-                sumCN = np.sum(self.C_list[i]*self.N_star)
-                #g1_fit = g1_star / sumCN
-                # 实际使用以下语句
-                g1_fit = g1_fit = g1_star / dlsData.intensity
-                ax1.plot(tau, g1_fit, 'k-')
-        else:
-            for i in range(self.angleNum):
-                dlsData = self.dlsDataList[i]
-                tau = dlsData.tau
-                ax1.plot(tau, self.g1_star_theta_list[i], '.', label='{}° exp'.format(int(dlsData.angle)))
-                g1_star = np.matmul(self.F_theta_list[i], self.N_star)
-                #g1_fit = g1_star / dlsData.intensity
-                g1_fit = g1_star
-                ax1.plot(tau, g1_fit, 'k-')
+
+    def plotResult_g1square(self):
+        fig = plt.figure()
+        ax1 = fig.add_subplot(211)
+        ax2 = fig.add_subplot(212)
+        N = self.N
+        for i in range(self.angleNum):
+            dlsData = self.dlsDataList[i]
+            tau = dlsData.tau
+            g1square = dlsData.g1square
+            ax1.plot(tau, g1square, '.', label='{}° exp'.format(int(dlsData.angle)))
+            
+            k = 1 / np.sum(self.C_theta_list[i]*N)
+            g1square_fit = (k * np.matmul(self.F_theta_list[i], N))**2
+            ax1.plot(tau, g1square_fit, 'k-')
+            
 
         ax1.set_xscale('log')
         ax1.legend()
+
+        ax2.plot(self.d, N)
+        if self.log_d:
+            ax2.set_xscale('log')
+        ax2.set_yscale('log')
 
         plt.show()
 
@@ -270,38 +334,14 @@ if __name__ == "__main__":
     data = multiAngleDls(filelist, d_min=10, d_max=300)
     data.d = np.array([100, 220, 360])
     #data.plotOriginalData()
-    data.solveNnls()
-    
-    #data.solveDualAnnealing()
-    #print([a.intensity for a in data.dlsDataList])
+    #data.solveNnls()
+    data.undeterminedMethod()
 
     # 实际的粒径分布情况
-    data.N_star = 15000*np.array([50, 2, 1])
+    data.N = np.array([50, 3, 1])
     #data.N_star = 18000*np.array([105, 3, 1])
-    data.plotResult2()
+    data.plotResult_g1square()
 
-
-    '''
-    data.N_star_nnls = 3000*np.array([50, 2, 1])
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    for dlsData in data.dlsDataList:
-        ax.plot(dlsData.tau, dlsData.g1, '.')
-    for i in range(len(data.dlsDataList)):
-        tau = data.dlsDataList[i].tau
-        C = data.C_list[i]
-        Exp = data.Exp_list[i]
-        F = data.F_theta_list[i]
-        N = data.N_star_nnls
-        CN = C * N
-        k = 1 / np.sum(CN)
-        CN = CN.reshape((CN.size, 1))
-        N = N.reshape((N.size, 1))
-        g1 = k * np.matmul(F, N)
-        ax.plot(tau, g1, '-')
-    ax.set_xscale('log')
-    plt.show()
-    '''
 
 
 

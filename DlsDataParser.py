@@ -107,6 +107,7 @@ class DlsData:
 
     def calcG1(self):
         beta = self.Ctau[0]
+        self.g1square = self.Ctau / beta
         self.g1 = np.sign(self.Ctau) * np.sqrt(np.abs(self.Ctau / beta))
         return self.g1
 
