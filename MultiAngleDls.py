@@ -20,6 +20,7 @@ import DlsDataParser
 3. 实际上来说，实验测得的intensity与sumCN有着一定的差别，因此使用intensity来得到不同角度的光散射数据会使得拟合的结果
    并不能完美吻合实验数据，即使使用的是实际上已知的粒径分布。因此后面考虑直接使用sumCN进行归一化，直接拟合g1而不是g1_star.
    不过产生的问题是这样拟合的函数就不再是线性函数了。
+4. 目前使用后缀 _g1 的方法效果暂时是最好的，用的也是NNLS方法
 '''
 
 
@@ -234,16 +235,119 @@ class multiAngleDls:
         self._multiAngleProcess_g1square()
         # minimize(objectFunction) to find N
         self.N = np.zeros_like(self.d)
+        bounds = np.vstack( (np.zeros_like(self.d), 100*np.ones_like(self.d)) ).T
+        tau_num = self.dlsDataList[0].tau.size
+        result = optimize.dual_annealing(
+            objectFunction, 
+            bounds=bounds, 
+            args=(self.F_R, self.C_theta_list, self.g1square_R, tau_num), 
+            maxiter=1000,
+            initial_temp=1.e4,
+            )
+        self.N = result.x
+        
+    def _singleAngleProcess_g1(self, dlsData, Int1):
+        kb = 1.38064852e-23                     # Boltzmann Constant
+
+        d = self.d * 1e-9                       # in meter
+        theta = dlsData.angle / 180 * np.pi     # rad
+        Lambda = dlsData.wavelength * 1e-9      # in meter
+        T = dlsData.temperature                 # in Kelvin
+        eta = dlsData.viscosity * 1e-3          # viscosity, in Pa.s
+        n =dlsData.RI_liquid
+        Int = dlsData.intensity                 # intensity, should be cps
+
+        g1 = dlsData.g1
+        g1 = g1.reshape((len(g1), 1))           # shape=(m, 1)
+        tau = dlsData.tau * 1e-6                # delay time, in second
+        tau = tau.reshape((len(tau), 1))         # shape=(m, 1)
+
+        g1_theta = g1
+
+        Gamma0 = (16 * np.pi * n**2 * kb * T)/(3 * Lambda**2 * eta) * np.sin(theta/2)**2
+
+        temp1 = -1 * Gamma0 * tau
+        temp2 = 1 / d
+        temp1 = temp1.reshape((len(tau), 1))
+        temp2 = temp2.reshape((1, len(d)))
+        Exp = np.exp(np.matmul(temp1, temp2))
+
+        C_theta = [] # intensity from Mie theory
+        # the parameters below only used in mie scattering calculations
+        d_nano = self.d                   # in nanometer
+        angle = theta                     # in rad
+        m_particle = complex(dlsData.RI_particle_real, dlsData.RI_particle_img)
+        wavelength = dlsData.wavelength   # in nanometer
+        for di in d_nano:
+            mieInt = self._calcMieScatt(angle, m_particle, wavelength, di, n, polarization='perpendicular')
+            C_theta.append(mieInt)
+        C_theta = np.array(C_theta) 
+        
+        '''
+        # 以下使用的方法算出来的F是错误的！
+        # 原因应该是python中的坑， 总之不再使用以下方法
+        F_theta = Exp
+        for i in range(len(C_theta)):
+            F_theta[:,i] = F_theta[:,i] * C_theta[i]
+        '''
+        F_theta = np.ones_like(Exp)
+        for j in range(Exp.shape[0]):
+            for i in range(Exp.shape[1]):
+                F_theta[j,i] = Exp[j,i] * C_theta[i]
+
+        k_star_theta = Int1 / Int
+
+        G_theta = k_star_theta * F_theta
+        
+        return g1_theta, G_theta, F_theta, C_theta, k_star_theta
+
+    def _multiAngleProcess_g1(self):
+        g1_theta_list = []
+        G_theta_list = []
+        F_theta_list = []
+        C_theta_list = []
+        k_star_theta_list = []
+        Int1 = self.dlsDataList[0].intensity
+        for dlsData in self.dlsDataList:
+            g1_theta, G_theta, F_theta, C_theta, k_star_theta = self._singleAngleProcess_g1(dlsData, Int1)
+            g1_theta_list.append(g1_theta)
+            G_theta_list.append(G_theta)
+            F_theta_list.append(F_theta)
+            C_theta_list.append(C_theta)
+            k_star_theta_list.append(k_star_theta)
+
+        g1_R = np.vstack(g1_theta_list)
+        G_R = np.vstack(G_theta_list)
+        
+        self.g1_theta_list = g1_theta_list
+        self.G_theta_list = G_theta_list
+        self.F_theta_list = F_theta_list
+        self.C_theta_list = C_theta_list
+        self.k_star_theta_list = k_star_theta_list
+
+        self.g1_R = g1_R
+        self.G_R = G_R
+
+        return g1_R, G_R
 
 
 
-    def solveNnls(self):
-        self._multiAngleProcess()
+
+    def solveNnls_g1star(self):
+        self._multiAngleProcess_g1star()
         g1_star_R = self.g1_star_R.reshape(len(self.g1_star_R))  # array shape for nnls method
         N_star, rnorm = optimize.nnls(self.F_R, g1_star_R, maxiter=None)
         self.N_star = N_star
         self.rnorm_nnls = rnorm
         return N_star, rnorm
+
+    def solveNnls_g1(self):
+        g1_R, G_R = self._multiAngleProcess_g1()
+        g1_R = g1_R.reshape(g1_R.size)  # array shape for nnls method
+        N, rnorm = optimize.nnls(G_R, g1_R, maxiter=30*G_R.shape[1])
+        self.N = N
+        self.rnorm_nnls = rnorm
+        return N, rnorm
 
     # 这个方法存在很大问题
     def solveDualAnnealing(self):
@@ -252,7 +356,7 @@ class multiAngleDls:
             r =  np.matmul(F_R, N_star) - g1_star_R
             return np.sum(abs(r))
         
-        self._multiAngleProcess()
+        self._multiAngleProcess_g1star()
         bounds = np.zeros((self.d.size, 2))
         bounds[:,1] = np.array([1e9]*self.d.size)
         result = optimize.dual_annealing(func, bounds=bounds, args=(self.F_R, self.g1_star_R))
@@ -271,13 +375,15 @@ class multiAngleDls:
                 g1 = dlsData.g1
                 ax1.plot(tau, g1, '.', label='{}° exp'.format(int(dlsData.angle)))
                 g1_star = np.matmul(self.F_theta_list[i], self.N_star)
-                # test
+                # TEST
                 # 用sumCN来归一化能够保证归一化的效果，但是其实实际拟合中并不是这么归一化的
                 # 实际中是使用的intensity归一化的
-                sumCN = np.sum(self.C_list[i]*self.N_star)
-                g1_fit = g1_star / sumCN
+                #sumCN = np.sum(self.C_list[i]*self.N_star)
+                #g1_fit = g1_star / sumCN
+                # END TEST
+
                 # 实际使用以下语句
-                #g1_fit = g1_fit = g1_star / dlsData.intensity
+                g1_fit = g1_star / dlsData.intensity
                 ax1.plot(tau, g1_fit, 'k-')
         else:
             for i in range(self.angleNum):
@@ -327,20 +433,49 @@ class multiAngleDls:
         plt.show()
 
 
+    def plotResult_g1(self):
+        fig = plt.figure()
+        ax1 = fig.add_subplot(211)
+        ax2 = fig.add_subplot(212)
+        N = self.N.reshape((self.N.size, 1))
+        for i in range(self.angleNum):
+            dlsData = self.dlsDataList[i]
+            tau = dlsData.tau
+            g1 = dlsData.g1
+            ax1.plot(tau, g1, '.', label='{}° exp'.format(int(dlsData.angle)))
+
+            g1_fit = np.matmul(self.G_theta_list[i], N)
+            # TEST
+            #g1_fit = g1_fit / g1_fit[0]
+            # END TEST 
+
+            ax1.plot(tau, g1_fit, 'k-')
+
+        ax1.set_xscale('log')
+        ax1.legend()
+
+        ax2.plot(self.d, N)
+        if self.log_d:
+            ax2.set_xscale('log')
+        ax2.set_yscale('log')
+
+        plt.show()
+
+
 
 if __name__ == "__main__":
     filelist = ['test_data/PS_80-200-300nm=2-1-1_{}.dat'.format(i+1) for i in range(6,13)]
     #filelist = ['test_data/PS_100nm_90degree.dat']
-    data = multiAngleDls(filelist, d_min=10, d_max=300)
-    data.d = np.array([100, 220, 360])
+    data = multiAngleDls(filelist, d_min=10, d_max=500)
+    #data.d = np.array([100, 220, 360])
     #data.plotOriginalData()
-    #data.solveNnls()
-    data.undeterminedMethod()
+    data.solveNnls_g1()
+    #data.undeterminedMethod()
 
     # 实际的粒径分布情况
-    data.N = np.array([50, 3, 1])
+    #data.N = 3 * np.array([50, 3, 1])
     #data.N_star = 18000*np.array([105, 3, 1])
-    data.plotResult_g1square()
+    data.plotResult_g1()
 
 
 
