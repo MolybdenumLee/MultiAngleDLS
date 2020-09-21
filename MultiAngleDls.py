@@ -35,7 +35,7 @@ Int = intensity
 
 class multiAngleDls:
 
-    def __init__(self, filelist, filetype='brookhaven dat file', d_min=1, d_max=1e3, d_num=50, log_d=False):
+    def __init__(self, filelist, filetype='brookhaven dat file', d_min=1, d_max=1e3, d_num=20, log_d=False, auto_process=True):
         # d_min, d_max in nanometer
 
         # read the multi-angle DLS data from a series of dat files
@@ -46,11 +46,14 @@ class multiAngleDls:
         # generate diameter array
         self.log_d = log_d
         if log_d:
-            self.d = np.logspace(d_min, d_max, num=d_num, base=10)
+            log_d_min = np.log10(d_min)
+            log_d_max = np.log10(d_max)
+            self.d = np.logspace(log_d_min, log_d_max, num=d_num, base=10)
         else:
             self.d = np.linspace(d_min, d_max, num=d_num)
         
-        self._multiAngleProcess()
+        if auto_process:
+            self._multiAngleProcess()
 
     def plotOriginalData(self, plot='g1square'):
         fig = plt.figure()
@@ -196,13 +199,13 @@ class multiAngleDls:
 
 
 
-    def solveDiaDist(self, method='BayesianInference'):
+    def solveDiaDist(self, method='BayesianInference', mcmc_method='NUTS', *args, **kwargs):
         if method == 'NNLS':
             self.result = DiaDistResult(self, method='NNLS')
             self.N = self.result.nnls_result[0]
             return self.result.nnls_result
         elif method == 'BayesianInference':
-            self.result = DiaDistResult(self, method='BayesianInference')
+            self.result = DiaDistResult(self, method='BayesianInference', mcmc_method='NUTS', *args, **kwargs)
             return 1
 
 
@@ -250,16 +253,16 @@ class multiAngleDls:
 
 
     def plotResult_g1square(self):
-        fig = plt.figure()
-        ax1 = fig.add_subplot(211)
-        ax2 = fig.add_subplot(212)
+        fig = plt.figure(figsize=(12,4))
+        ax1 = fig.add_subplot(121)
+        ax2 = fig.add_subplot(122)
         N = self.N
         for i in range(self.angleNum):
             dlsData = self.dlsDataList[i]
             tau = dlsData.tau
             g1square = dlsData.g1square
             ax1.plot(tau, g1square, '.', label='{}° exp'.format(int(dlsData.angle)))
-            
+        for i in range(self.angleNum):
             k = 1 / np.sum(self.C_theta_list[i]*N)
             g1square_fit = (k * np.matmul(self.F_theta_list[i], N))**2
             ax1.plot(tau, g1square_fit, 'k-')
@@ -271,7 +274,7 @@ class multiAngleDls:
         ax2.plot(self.d, N)
         if self.log_d:
             ax2.set_xscale('log')
-        ax2.set_yscale('log')
+        #ax2.set_yscale('log')
 
         plt.show()
 

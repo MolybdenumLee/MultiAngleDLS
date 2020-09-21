@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*- 
 
 import numpy as np
-
+from scipy.linalg import lstsq
 #
 # G2 = B * (1 + beta * g1^2) = B * (1 + Ctau)
 # Ctau = beta * g1^2
@@ -106,7 +106,16 @@ class DlsData:
         return self.Ctau
 
     def calcG1(self):
-        beta = self.Ctau[0]
+        Ctau = self.Ctau
+
+        # determine beta by fitting first 5 values with Y=beta*exp(-alpha*X)
+        # lnY = -alpha*X + ln beta
+        X, Y = self.tau[:10], Ctau[:10]
+        lnY = np.log(Y)
+        A = np.array([[1, xi] for xi in X])
+        lnBeta = lstsq(A, lnY)[0][0]
+        beta = np.exp(lnBeta)
+
         self.g1square = self.Ctau / beta
         self.g1 = np.sign(self.Ctau) * np.sqrt(np.abs(self.Ctau / beta))
         return self.g1
