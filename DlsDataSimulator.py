@@ -30,8 +30,7 @@ class DlsDataSim:
         RI_liquid=1.331,
         RI_particle_real=1.5875,
         RI_particle_img=0,
-        noise=True,
-        noise_factor=0.05
+        noise_factor=0.002
     ):
         self.d = d
         self.N = N
@@ -43,8 +42,10 @@ class DlsDataSim:
         self.RI_liquid = RI_liquid
         self.RI_particle_real = RI_particle_real
         self.RI_particle_img = RI_particle_img
-        self.noise = noise
         self.noise_factor = noise_factor
+
+        self.genG1()
+        self.genG1square()
 
 
     def _calcMieScatt(self, angle, m_particle, wavelength, diameter, nMedium, polarization='perpendicular'):
@@ -103,8 +104,12 @@ class DlsDataSim:
         self.C = C
         self.intensity = np.sum(CN)
         self.g1 = g1
-        self.g1_with_noise = g1 + self.noise_factor*np.random.randn(g1.size)
-        return self.g1, self.g1_with_noise
+        return self.g1
+
+    def genG1square(self):
+        self.g1square = self.g1**2
+        self.g1square_with_noise = self.g1square + self.noise_factor * np.random.randn(self.g1.size, 1)
+        return self.g1square, self.g1square_with_noise
 
     def plotG1(self):
         fig = plt.figure()
@@ -119,11 +124,12 @@ if __name__ == "__main__":
     N = np.array([50, 2, 1])
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    for angle in range(30, 100, 10):
+    for angle in range(15, 135, 15):
         data = DlsDataSim(d, N, angle=angle)
         data.genG1()
-        ax.plot(data.tau, data.g1_with_noise, '.', label=str(angle)+'degree')
-        ax.plot(data.tau, data.g1, 'k-')
+        ax.plot(data.tau, data.g1square_with_noise, '.', label=str(angle)+'degree')
+        ax.plot(data.tau, data.g1square, 'k-')
     ax.set_xscale('log')
     ax.legend()
+    fig.savefig('test.png')
     plt.show()
