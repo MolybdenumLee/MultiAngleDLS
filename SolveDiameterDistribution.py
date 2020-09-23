@@ -12,7 +12,7 @@ print("Running on PyMC3 v{}".format(pm.__version__))
 
 class DiaDistResult:
 
-    def __init__(self, MdlsData, method='BayesianInference', mcmc_method='NUTS', *args, **kwargs):
+    def __init__(self, MdlsData, method='BayesianInference', mcmc_method='NUTS', auto=True, *args, **kwargs):
         '''
         Mdls means multi-angle DLS
         MdlsData is a instance of multiAngleDls object in MultiAngleDls.py
@@ -25,10 +25,11 @@ class DiaDistResult:
         self.method = method
         self.d = self.data.d
 
-        if method == 'NNLS':
-            self.solveNnls()
-        elif method == 'BayesianInference':
-            self.solveBayesianInference(mcmc_method=mcmc_method, *args, **kwargs)
+        if auto:
+            if method == 'NNLS':
+                self.solveNnls()
+            elif method == 'BayesianInference':
+                self.solveBayesianInference(mcmc_method=mcmc_method, *args, **kwargs)
 
     
     def solveNnls(self):
@@ -129,7 +130,7 @@ class DiaDistResult:
         # beggin MCMC
         with model:
             if mcmc_method == 'NUTS':
-                step = pm.NUTS()
+                step = pm.NUTS(target_accept=0.95)
             elif mcmc_method == 'HamiltonianMC':
                 step = pm.HamiltonianMC()
             elif mcmc_method == 'Slice':
@@ -146,3 +147,4 @@ class DiaDistResult:
         N_result = np.sum(trace['N'], axis=0) / (trace['N'].shape[0] + 1)
         self.N = N_result
         self.trace = trace
+        return model

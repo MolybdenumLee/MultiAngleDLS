@@ -56,7 +56,8 @@ class multiAngleDls:
             self._multiAngleProcess()
 
     def plotOriginalData(self, plot='g1square'):
-        fig = plt.figure()
+        #plt.style.use('seaborn')
+        fig = plt.figure(figsize=(12,4))
         ax = fig.add_subplot(111)
         for i in range(len(self.dlsDataList)):
             dlsData = self.dlsDataList[i]
@@ -71,6 +72,7 @@ class multiAngleDls:
         ax.axhline(y=0, color='black')
         ax.legend()
         ax.set_xscale('log')
+        ax.set_xlabel(r'$\tau \; (ms)$')
         plt.show()
 
     def _calcMieScatt(self, angle, m_particle, wavelength, diameter, nMedium, polarization='perpendicular'):
