@@ -3,8 +3,8 @@
 import datetime
 
 
-# dls is an DlsSimulation object in DlsDataSimulator.py
-def save(dls, filename):
+# dls is an DlsDataSim object in DlsDataSimulator.py
+def save(dls, filename, sampleID=None, operatorID='limu'):
     textList = ['' for i in range(37)]
 
     textList[0]  = '1'    # Run Number 
@@ -15,21 +15,21 @@ def save(dls, filename):
     textList[5]  = dls.tau[0]
     textList[6]  = dls.tau.size
     textList[7]  = 0      # Determines whether the ISDA programs will prompt the user for which baseline to use: 0 = will prompt
-    textList[8]  = dls.paramsDict['angle']
-    textList[9]  = dls.paramsDict['wavelength']
-    textList[10] = dls.paramsDict['temperature']
-    textList[11] = dls.paramsDict['viscosity']
+    textList[8]  = dls.angle
+    textList[9]  = dls.wavelength
+    textList[10] = dls.temperature
+    textList[11] = dls.viscosity
     textList[12] = 0      # not used
-    textList[13] = dls.paramsDict['RI liquid']
-    textList[14] = dls.paramsDict['RI particle real']
-    textList[15] = dls.paramsDict['RI particle img']
+    textList[13] = dls.RI_liquid
+    textList[14] = dls.RI_particle_real
+    textList[15] = dls.RI_particle_img
     textList[16] = 37     # One less than the number of parameters preceding the x and y data in this file. As of the date of this document, the number of parameters is 37. 
     textList[17] = dls.tau[0]
     textList[18] = -2     # Time delay mode: -2 = Constant ratio spacing • -1 = Spacing from delay file • 1 = Linear spacing 
     textList[19] = 2      # Analysis mode: • 2 = Autocorrelation  • 3 = Cross correlation  • 4 = Test 
     textList[20] = 4      # Number of extended baseline channels 
-    textList[21] = dls.paramsDict['baseline']
-    textList[22] = dls.paramsDict['baseline']
+    textList[21] = dls.baseline
+    textList[22] = dls.baseline
     textList[23] = dls.tau[-1]
     textList[24] = '-1'   # Sampling time used to generate number of samples (µs)
     textList[25] = '-1'   # First delay used from High speed section
@@ -45,16 +45,16 @@ def save(dls, filename):
     textList[35] = '-1'   # Last measured baseline channel number 
     textList[36] = '0'    # not used
     
-    for i in range(len(dls.tau)):
-        line = '{} {}'.format(str(dls.tau[i]), str(dls.G2_exp[i]))
+    for i in range(dls.tau.size):
+        line = '{:.9e} {:.9e}'.format(dls.tau[i], dls.g2_with_noise[i])
         textList.append(line)
     
-    textList.append(
-        dls.paramsDict['sample ID']
-    )
-    textList.append(
-        dls.paramsDict['operator ID']
-    )
+    if sampleID:
+        textList.append(sampleID)
+    else:
+        sampleID = '.'.join(filename.split('.')[:-1])
+
+    textList.append(operatorID)
 
     today = datetime.date.today()
     date = '{}/{}/{}'.format(str(today.month), str(today.day), str(today.year))

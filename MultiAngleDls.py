@@ -56,7 +56,7 @@ class multiAngleDls:
             self._multiAngleProcess()
 
     def plotOriginalData(self, plot='g1square'):
-        #plt.style.use('seaborn')
+        plt.style.use('seaborn')
         fig = plt.figure(figsize=(12,4))
         ax = fig.add_subplot(111)
         for i in range(len(self.dlsDataList)):
@@ -258,7 +258,7 @@ class multiAngleDls:
         fig = plt.figure(figsize=(12,4))
         ax1 = fig.add_subplot(121)
         ax2 = fig.add_subplot(122)
-        N = self.N
+        N = self.result.N
         for i in range(self.angleNum):
             dlsData = self.dlsDataList[i]
             tau = dlsData.tau

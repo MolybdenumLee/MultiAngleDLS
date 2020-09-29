@@ -3,8 +3,9 @@
 import numpy as np
 import PyMieScatt as ps
 import matplotlib.pyplot as plt
-
 import os
+
+import SaveBrookhavenDatFile
 
 '''
 ### 所用缩写说明 ###
@@ -20,6 +21,10 @@ class DlsDataSim:
         self, 
         d,
         N,
+        save=True,
+        filename='Simulated_DLS.dat',
+        sampleID='Simulated_DLS',
+        operatorID='limu',
         tau_min=1, 
         tau_max=1e6, 
         tau_num=200,
@@ -30,7 +35,9 @@ class DlsDataSim:
         RI_liquid=1.331,
         RI_particle_real=1.5875,
         RI_particle_img=0,
-        noise_factor=0.002
+        noise_factor=0.002,       # applied on g1square
+        beta=0.53,
+        baseline=53364332
     ):
         self.d = d
         self.N = N
@@ -43,9 +50,20 @@ class DlsDataSim:
         self.RI_particle_real = RI_particle_real
         self.RI_particle_img = RI_particle_img
         self.noise_factor = noise_factor
+        self.beta = beta
+        self.baseline = baseline
+
+        self.filename = filename
+        self.sampleID = sampleID
+        self.operatorID = operatorID
 
         self.genG1()
         self.genG1square()
+        self.genG2()
+
+        if save:
+            self.saveData()
+
 
 
     def _calcMieScatt(self, angle, m_particle, wavelength, diameter, nMedium, polarization='perpendicular'):
@@ -82,8 +100,8 @@ class DlsDataSim:
         Gamma0 = (16 * np.pi * n**2 * kb * T)/(3 * Lambda**2 * eta) * np.sin(theta/2)**2
         temp1 = -1 * Gamma0 * tau
         temp2 = 1 / d
-        temp1 = temp1.reshape((len(tau), 1))
-        temp2 = temp2.reshape((1, len(d)))
+        temp1 = temp1.reshape((tau.size, 1))
+        temp2 = temp2.reshape((1, d.size))
         Exp = np.exp(np.matmul(temp1, temp2))
 
         C = [] # intensity from Mie theory
@@ -100,6 +118,7 @@ class DlsDataSim:
         k = 1 / np.sum(CN)
         CN = CN.reshape((CN.size, 1))
         g1 = k * np.matmul(Exp, CN)
+        g1 = g1.reshape(g1.size)          # convert g1 to 1d array, same as tau
         self.Exp = Exp
         self.C = C
         self.intensity = np.sum(CN)
@@ -108,8 +127,15 @@ class DlsDataSim:
 
     def genG1square(self):
         self.g1square = self.g1**2
-        self.g1square_with_noise = self.g1square + self.noise_factor * np.random.randn(self.g1.size, 1)
+        self.g1square_with_noise = self.g1square + self.noise_factor * np.random.randn(self.g1.size)
         return self.g1square, self.g1square_with_noise
+
+    def genG2(self):
+        beta = self.beta
+        B = self.baseline
+        self.g2 = B * (1 + beta*self.g1square)
+        self.g2_with_noise = B * (1 + beta*self.g1square_with_noise)
+        return self.g2, self.g2_with_noise
 
     def plotG1(self):
         fig = plt.figure()
@@ -118,18 +144,21 @@ class DlsDataSim:
         ax.set_xscale('log')
         plt.show()
 
+    def saveData(self):
+        SaveBrookhavenDatFile.save(self, self.filename, sampleID=self.sampleID, operatorID=self.operatorID)
+
 
 if __name__ == "__main__":
-    d = np.array([100, 220, 360])
-    N = np.array([50, 2, 1])
+    d = np.array([20, 300, 1000])
+    N = np.array([1000, 5, 1])
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    for angle in range(15, 135, 15):
-        data = DlsDataSim(d, N, angle=angle)
+    for angle in range(30, 120, 10):
+        data = DlsDataSim(d, N, angle=angle, filename='test_data/simulated data at {} degree.dat'.format(angle))
         data.genG1()
         ax.plot(data.tau, data.g1square_with_noise, '.', label=str(angle)+'degree')
         ax.plot(data.tau, data.g1square, 'k-')
     ax.set_xscale('log')
     ax.legend()
     fig.savefig('test.png')
-    plt.show()
+    #plt.show()
