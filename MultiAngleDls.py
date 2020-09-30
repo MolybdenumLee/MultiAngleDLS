@@ -41,7 +41,7 @@ class multiAngleDls:
         # read the multi-angle DLS data from a series of dat files
         self.dlsDataList = []
         for file in filelist:
-            self.dlsDataList.append(DlsDataParser.DlsData(filename=file))
+            self.dlsDataList.append(DlsDataParser.DlsData(file))
         self.angleNum = len(self.dlsDataList)
         # generate diameter array
         self.log_d = log_d
@@ -56,7 +56,7 @@ class multiAngleDls:
             self._multiAngleProcess()
 
     def plotOriginalData(self, plot='g1square'):
-        plt.style.use('seaborn')
+        #plt.style.use('seaborn')
         fig = plt.figure(figsize=(12,4))
         ax = fig.add_subplot(111)
         for i in range(len(self.dlsDataList)):
@@ -204,121 +204,62 @@ class multiAngleDls:
     def solveDiaDist(self, method='BayesianInference', mcmc_method='NUTS', *args, **kwargs):
         if method == 'NNLS':
             self.result = DiaDistResult(self, method='NNLS')
-            self.N = self.result.nnls_result[0]
-            return self.result.nnls_result
         elif method == 'BayesianInference':
             self.result = DiaDistResult(self, method='BayesianInference', mcmc_method='NUTS', *args, **kwargs)
-            return 1
+        return self.result
 
-
-    def plotResult_g1star(self):
-        fig = plt.figure()
-        ax1 = fig.add_subplot(211)
-        ax2 = fig.add_subplot(212)
-        plot_g1_star = False
-        if not plot_g1_star:
-            for i in range(self.angleNum):
-                dlsData = self.dlsDataList[i]
-                tau = dlsData.tau
-                g1 = dlsData.g1
-                ax1.plot(tau, g1, '.', label='{}° exp'.format(int(dlsData.angle)))
-                g1_star = np.matmul(self.F_theta_list[i], self.N_star)
-                # TEST
-                # 用sumCN来归一化能够保证归一化的效果，但是其实实际拟合中并不是这么归一化的
-                # 实际中是使用的intensity归一化的
-                #sumCN = np.sum(self.C_list[i]*self.N_star)
-                #g1_fit = g1_star / sumCN
-                # END TEST
-
-                # 实际使用以下语句
-                g1_fit = g1_star / dlsData.intensity
-                ax1.plot(tau, g1_fit, 'k-')
-        else:
-            for i in range(self.angleNum):
-                dlsData = self.dlsDataList[i]
-                tau = dlsData.tau
-                ax1.plot(tau, self.g1_star_theta_list[i], '.', label='{}° exp'.format(int(dlsData.angle)))
-                g1_star = np.matmul(self.F_theta_list[i], self.N_star)
-                #g1_fit = g1_star / dlsData.intensity
-                g1_fit = g1_star
-                ax1.plot(tau, g1_fit, 'k-')
-
-        ax1.set_xscale('log')
-        ax1.legend()
-
-        ax2.plot(self.d, self.N_star)
-        if self.log_d:
-            ax2.set_xscale('log')
-        ax2.set_yscale('log')
-
-        plt.show()
-
-
-    def plotResult_g1square(self):
+    def plotResult(self, show=True, figname=None, title=None):
         fig = plt.figure(figsize=(12,4))
         ax1 = fig.add_subplot(121)
         ax2 = fig.add_subplot(122)
         N = self.result.N
+
         for i in range(self.angleNum):
             dlsData = self.dlsDataList[i]
             tau = dlsData.tau
-            g1square = dlsData.g1square
-            ax1.plot(tau, g1square, '.', label='{}° exp'.format(int(dlsData.angle)))
-        for i in range(self.angleNum):
-            k = 1 / np.sum(self.C_theta_list[i]*N)
-            g1square_fit = (k * np.matmul(self.F_theta_list[i], N))**2
+            g1square_exp = dlsData.g1square
+            ax1.plot(tau, g1square_exp, '.', label='{}° exp'.format(int(dlsData.angle)))
+
+            C = self.C_theta_list[i]
+            F = self.F_theta_list[i]
+            k = 1 / np.sum(C*N)
+            g1square_fit = ( k * np.matmul(F, N) )**2
             ax1.plot(tau, g1square_fit, 'k-')
+
+        ax1.set_title(r'$|g^{(1)}|^2$')
+        ax1.set_xlabel(r'$\tau \, (ms)$')
+        ax1.set_ylabel(r'$|g^{(1)}|^2$')
+        ax1.set_xscale('log')
+        ax1.legend(frameon=False)
+        
+        d = self.d
+        ax2.plot(d, N, '-')
+        ax2.set_xlabel('d (nm)')
+        ax2.set_ylabel('Number')
+        ax2.set_title('Number Distribution')
+
+        if title:
+            fig.suptitle(title)
+
+        if show:
+            plt.show()
+        if figname:
+            fig.savefig(figname)
+
+        self.result_fig = fig
+
+        return self.result_fig
             
-
-        ax1.set_xscale('log')
-        ax1.legend()
-
-        ax2.plot(self.d, N)
-        if self.log_d:
-            ax2.set_xscale('log')
-        #ax2.set_yscale('log')
-
-        plt.show()
-
-
-    def plotResult_g1(self):
-        fig = plt.figure()
-        ax1 = fig.add_subplot(211)
-        ax2 = fig.add_subplot(212)
-        N = self.N.reshape((self.N.size, 1))
-        for i in range(self.angleNum):
-            dlsData = self.dlsDataList[i]
-            tau = dlsData.tau
-            g1 = dlsData.g1
-            ax1.plot(tau, g1, '.', label='{}° exp'.format(int(dlsData.angle)))
-
-            g1_fit = np.matmul(self.G_theta_list[i], N)
-            # TEST
-            #g1_fit = g1_fit / g1_fit[0]
-            # END TEST 
-
-            ax1.plot(tau, g1_fit, 'k-')
-
-        ax1.set_xscale('log')
-        ax1.legend()
-
-        ax2.plot(self.d, N)
-        if self.log_d:
-            ax2.set_xscale('log')
-        ax2.set_yscale('log')
-
-        plt.show()
-
-
 
 if __name__ == "__main__":
     filelist = ['test_data/PS_80-200-300nm=2-1-1_{}.dat'.format(i+1) for i in range(6,13)]
     #filelist = ['test_data/PS_100nm_90degree.dat']
     data = multiAngleDls(filelist, d_min=10, d_max=500)
     #data.d = np.array([100, 220, 360])
-    #data.plotOriginalData()
-    data.solveDiaDist(method='BayesianInference')
-    #data.undeterminedMethod()
+    data.plotOriginalData()
+    data.solveDiaDist(method='NNLS')
+    data.plotResult(show=False, figname='test.png')
+    # method='BayesianInference' or 'NNLs'
 
     # 实际的粒径分布情况
     #data.N = 3 * np.array([50, 3, 1])

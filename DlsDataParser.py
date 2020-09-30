@@ -11,7 +11,7 @@ from scipy.linalg import lstsq
 
 class DlsData:
 
-    def __init__(self, filename=None, filetype='brookhaven dat file', baseline='default', auto=True):
+    def __init__(self, filename, filetype='brookhaven dat file', baseline='default', auto=True):
         self.sampleInfo = {
             'SampleID': 'foo',
             'OperatorID': 'foo',

@@ -37,7 +37,7 @@ class DiaDistResult:
         g1_R, G_R = data.g1_R, data.G_R
         g1_R = g1_R.reshape(g1_R.size)  # array shape for nnls method
         N, rnorm = optimize.nnls(G_R, g1_R, maxiter=30*G_R.shape[1])
-        self.N = N
+        self.N = N.reshape((N.size, 1))
         print('NNLS calculation ended.')
         return N, rnorm
 
@@ -162,7 +162,7 @@ class DiaDistResult:
             #trace = pm.sample(draws=10000, step=step, cores=8, chains=8, tune=100000, discard_tuned_samples=True)
         
         #az.summary(trace)
-        print(trace['N'].shape)
+        #print(trace['N'].shape)
         N_result = np.sum(trace['N'], axis=0) / (trace['N'].shape[0] + 1)
         self.N = N_result
         self.trace = trace

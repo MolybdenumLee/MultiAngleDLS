@@ -5,6 +5,7 @@ import PyMieScatt as ps
 import matplotlib.pyplot as plt
 import os
 
+import DlsDataParser
 import SaveBrookhavenDatFile
 
 '''
@@ -25,6 +26,7 @@ class DlsDataSim:
         filename='Simulated_DLS.dat',
         sampleID='Simulated_DLS',
         operatorID='limu',
+        tau_datfile = None,
         tau_min=1, 
         tau_max=1e6, 
         tau_num=200,
@@ -41,7 +43,12 @@ class DlsDataSim:
     ):
         self.d = d
         self.N = N
-        self.tau = np.logspace(np.log10(tau_min), np.log10(tau_max), num=tau_num, base=10) # microsecond
+        if tau_datfile:
+            template = DlsDataParser.DlsData(tau_datfile)
+            tau = template.tau                # microsecond
+            self.tau = tau.reshape(tau.size)
+        else:
+            self.tau = np.logspace(np.log10(tau_min), np.log10(tau_max), num=tau_num, base=10) # microsecond
         self.angle = angle # degree
         self.wavelength = wavelength # nanometer
         self.temperature = temperature
@@ -149,12 +156,12 @@ class DlsDataSim:
 
 
 if __name__ == "__main__":
-    d = np.array([20, 300, 1000])
-    N = np.array([1000, 5, 1])
+    d = np.array([400, 600, 1019])
+    N = np.array([74, 19, 7])
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    for angle in range(30, 120, 10):
-        data = DlsDataSim(d, N, angle=angle, filename='test_data/simulated data at {} degree.dat'.format(angle))
+    for angle in range(30, 150, 10):
+        data = DlsDataSim(d, N, angle=angle, filename='test_data/simulated data at {} degree.dat'.format(angle), tau_datfile='test_data/PS_80-200-300nm=2-1-1_1.dat')
         data.genG1()
         ax.plot(data.tau, data.g1square_with_noise, '.', label=str(angle)+'degree')
         ax.plot(data.tau, data.g1square, 'k-')
