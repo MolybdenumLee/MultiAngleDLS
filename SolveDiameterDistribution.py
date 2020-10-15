@@ -12,24 +12,30 @@ print("Running on PyMC3 v{}".format(pm.__version__))
 
 class DiaDistResult:
 
-    def __init__(self, MdlsData, method='BayesianInference', mcmc_method='NUTS', auto=True, *args, **kwargs):
+    def __init__(self, MdlsData, method='BayesianInference', alpha=1, beta=1, mcmc_method='NUTS', auto=True, *args, **kwargs):
         '''
         Mdls means multi-angle DLS
         MdlsData is a instance of multiAngleDls object in MultiAngleDls.py
         
         supported methods are:
         NNLS, BayesianInference
+
+        *args, **kwargs transfer to pm.sample() directly
         '''
 
         self.data = MdlsData
         self.method = method
         self.d = self.data.d
+        self.params = {
+            'NNLS': {},
+            'BayesianInference': {}
+        }
 
         if auto:
             if method == 'NNLS':
                 self.solveNnls()
             elif method == 'BayesianInference':
-                self.solveBayesianInference(mcmc_method=mcmc_method, *args, **kwargs)
+                self.solveBayesianInference(alpha=alpha, beta=beta, mcmc_method=mcmc_method, *args, **kwargs)
 
     
     def solveNnls(self):
@@ -41,10 +47,12 @@ class DiaDistResult:
         print('NNLS calculation ended.')
         return N, rnorm
 
-    def solveBayesianInference(self, mcmc_method='NUTS', *args, **kwargs):
+    def solveBayesianInference(self, alpha=1, beta=1, mcmc_method='NUTS', *args, **kwargs):
         data = self.data
-        self.mcmc_method = mcmc_method
-        
+        self.params['BayesianInference']['alpha'] = alpha
+        self.params['BayesianInference']['beta'] = beta
+        self.params['BayesianInference']['mcmc_method'] = mcmc_method
+
         # 2 numbers that may be used directly
         n = data.d.size                       # d number
         R = data.angleNum                     # angle number
@@ -69,12 +77,14 @@ class DiaDistResult:
 
 
         ################## 构建 p(N) ###################
-        # 先验分布，此处使用的是一个指数分布
-        # 包含信息：粒径分布必须大于等于0，且尽量光滑
-        from pymc3.distributions.continuous import BoundedContinuous
-        from pymc3.distributions.dist_math import bound
-
-        class pN(BoundedContinuous):
+        # 先验分布，此处使用的是 指数分布 以及 伽马分布
+        # 由于指数分布实际上是伽马分布的特殊情况（alpha=1），因此就只保留一个就够了
+        # 包含信息：粒径分布必须大于等于0，且尽量光滑（二阶导尽可能小）
+        from pymc3.distributions.continuous import BoundedContinuous, PositiveContinuous
+        from pymc3.distributions.dist_math import bound, gammaln, logpow
+        from pymc3.theanof import floatX
+        '''
+        class pN_Exponential(BoundedContinuous):
 
             def __init__(self, lower=np.zeros((n, 1)), L=L2, *args, **kwargs):
                 self.lower = lower = tt.as_tensor_variable(lower)
@@ -87,6 +97,30 @@ class DiaDistResult:
                 lower = self.lower
                 L = self.L
                 return bound(-1*tt.sum(tt.dot(L, value)**2), value >= lower)
+        '''
+        class pN_Gamma(PositiveContinuous):
+
+            def __init__(self, alpha=1, beta=1, L=L2, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.alpha = alpha = tt.as_tensor_variable(floatX(alpha))
+                self.beta = beta = tt.as_tensor_variable(floatX(beta))
+                self.L = L = tt.as_tensor_variable(L)
+
+                #assert_negative_support(alpha, "alpha", "Gamma")
+                #assert_negative_support(beta, "beta", "Gamma")
+
+            def logp(self, value):
+                # value here is N
+                alpha = self.alpha
+                beta = self.beta
+                L = self.L
+                return bound(
+                    #-gammaln(alpha) + logpow(beta, alpha) - beta * tt.sum(tt.dot(L, value)**2) + logpow(tt.sum(tt.dot(L, value)**2), alpha - 1),
+                    -gammaln(alpha) + alpha*tt.log(beta) - beta * tt.sum(tt.dot(L, value)**2) + (alpha - 1)*tt.log(tt.sum(tt.dot(L, value)**2)),
+                    value >= 0,
+                    alpha > 0,
+                    beta > 0,
+                )
         ##################################################
 
         '''
@@ -122,7 +156,9 @@ class DiaDistResult:
         model = pm.Model()
         with model:
             #### prior distribution ####
-            N = pN('N', lower=np.zeros((n, 1)), L=L2, shape=(n,1), testval=np.ones((n, 1)))
+            testval = np.ones((n, 1))
+            testval[int(n/2), 0] = 2
+            N = pN_Gamma('N', alpha=alpha, beta=beta, L=L2, shape=(n,1), testval=testval)  # 这里testval用np.zeros就会报错 bad initial energy
             
             # assume sigma~N(0, s^2), so s is the std. deviation of sigma distribution
             s = 0.05

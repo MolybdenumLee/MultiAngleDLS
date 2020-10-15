@@ -156,8 +156,10 @@ class DlsDataSim:
 
 
 if __name__ == "__main__":
-    d = np.array([400, 600, 1019])
-    N = np.array([74, 19, 7])
+    #d = np.array([400, 600, 1019])
+    #N = np.array([74, 19, 7])
+    d = np.array([100])
+    N = np.array([1])
     fig = plt.figure()
     ax = fig.add_subplot(111)
     for angle in range(30, 150, 10):

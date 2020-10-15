@@ -5,6 +5,7 @@ import numpy as np
 from scipy import optimize
 import matplotlib.pyplot as plt
 import PyMieScatt as ps
+import json
 
 import DlsDataParser
 from SolveDiameterDistribution import DiaDistResult
@@ -15,13 +16,13 @@ from SolveDiameterDistribution import DiaDistResult
 
 '''
 尚待解决的问题：
-1. 如果拟合g1，g1在数据大tau处会很接近零，Ctau开根号后导致那块地方数据波动相当剧烈，这样会导致拟合在低tau处的权重下降。
-   但是如果考虑拟合g1^2也就大概是Ctau的话，那就会丧失线性关系这一个优点了。
-2. 数据点分布其实比较不均匀，使得不同位置的权重差别较大
-3. 实际上来说，实验测得的intensity与sumCN有着一定的差别，因此使用intensity来得到不同角度的光散射数据会使得拟合的结果
-   并不能完美吻合实验数据，即使使用的是实际上已知的粒径分布。因此后面考虑直接使用sumCN进行归一化，直接拟合g1而不是g1_star.
-   不过产生的问题是这样拟合的函数就不再是线性函数了。
-4. 目前使用后缀 _g1 的方法效果暂时是最好的，用的也是NNLS方法
+1. 略慢...不过现在发现MCMC不用计算那么多步就能得到还不错的结果了，大概半小时就差不多了。
+   目前来看 draws=500, cores=8, chains=8, tune=2000 的设置就能得到比较满意的结果
+2. 在小直径处总会有很严重的上翘（0-200nm），可以理解，因为小直径粒子在光强上的贡献非常之小，因此数量上看起来很严重的上翘其实光强贡献可以忽略不计
+   因此，对于200nm以上的粒径计算结果非常好，然而有200nm以下粒径的结果就会被这个上翘完全掩盖。
+
+未来计划:
+1. 能不能使用 NNLS 甚至 CONTIN 得到的结果来作为MCMC的起始值(start参数)
 '''
 
 
@@ -201,11 +202,11 @@ class multiAngleDls:
 
 
 
-    def solveDiaDist(self, method='BayesianInference', mcmc_method='NUTS', *args, **kwargs):
+    def solveDiaDist(self, method='BayesianInference', alpha=1, beta=1, mcmc_method='NUTS', *args, **kwargs):
         if method == 'NNLS':
             self.result = DiaDistResult(self, method='NNLS')
         elif method == 'BayesianInference':
-            self.result = DiaDistResult(self, method='BayesianInference', mcmc_method='NUTS', *args, **kwargs)
+            self.result = DiaDistResult(self, method='BayesianInference', alpha=1, beta=1, mcmc_method='NUTS', *args, **kwargs)
         return self.result
 
     def plotResult(self, show=True, figname=None, title=None):
@@ -249,6 +250,44 @@ class multiAngleDls:
         self.result_fig = fig
 
         return self.result_fig
+
+    def saveResult(self, filename):
+        result_dict = {}
+
+        result_dict['d'] = self.d.tolist()
+        result_dict['N'] = self.result.N.tolist()
+        result_dict['g1_theta_list'] = [a.tolist() for a in self.g1_theta_list]
+        result_dict['g1square_theta_list'] = [a.tolist() for a in self.g1square_theta_list]
+        result_dict['G_theta_list'] = [a.tolist() for a in self.G_theta_list]
+        result_dict['F_theta_list'] = [a.tolist() for a in self.F_theta_list]
+        result_dict['C_theta_list'] = [a.tolist() for a in self.C_theta_list]
+        result_dict['k_star_theta_list'] = [a.tolist() for a in self.k_star_theta_list]
+        result_dict['g1_R'] = self.g1_R.tolist()
+        result_dict['G_R'] = self.G_R.tolist()
+
+        dlsDataList = []
+        for dlsData in self.dlsDataList:
+            dic = dlsData.__dict__
+            for key in dic.keys():
+                if type(dic[key]) == np.ndarray:
+                    dic[key] = dic[key].tolist()
+            dlsDataList.append(dic)
+        result_dict['dlsDataList'] = dlsDataList
+
+        jsontext = json.dumps(result_dict, indent=1)
+        with open(filename, 'w') as f:
+            f.write(jsontext)
+        
+        return 'data saved in {}'.format(filename)
+
+    
+    def loadResult(self, filename):
+        with open(filename, 'r') as f:
+            jsontext = f.read()
+        result_dict = json.loads(jsontext)
+        '''
+        to be continued !!!
+        '''
             
 
 if __name__ == "__main__":
