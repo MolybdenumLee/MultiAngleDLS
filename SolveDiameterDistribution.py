@@ -156,14 +156,17 @@ class DiaDistResult:
         model = pm.Model()
         with model:
             #### prior distribution ####
-            testval = np.ones((n, 1))
-            testval[int(n/2), 0] = 2
+            # testval的选择也比较重要，目前来看对于我们选择的分布，需要满足：
+            # 不能有0，如果alhpa!=1的情况下不能全为一样的值
+            # 否则会报错：bad initial energy
+            testval = 1e-5 * np.ones((n, 1))
+            testval[int(n/2), 0] = 2 * testval[int(n/2), 0]
             N = pN_Gamma('N', alpha=alpha, beta=beta, L=L2, shape=(n,1), testval=testval)  # 这里testval用np.zeros就会报错 bad initial energy
             
             # assume sigma~N(0, s^2), so s is the std. deviation of sigma distribution
             s = 0.05
-            beta = 1 / (2*s**2)
-            sigma = pm.Gamma('sigma', alpha=0.5, beta=beta, shape=R)
+            beta1 = 1 / (2*s**2)
+            sigma = pm.Gamma('sigma', alpha=0.5, beta=beta1, shape=R)
             ############################
 
             #### likelihood function ###

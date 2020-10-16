@@ -4,8 +4,10 @@ import os
 import numpy as np
 from scipy import optimize
 import matplotlib.pyplot as plt
+from cycler import cycler # matplotlib内部对象，用于使用内置 colormap 生成循环
 import PyMieScatt as ps
 import json
+import arviz as az
 
 import DlsDataParser
 from SolveDiameterDistribution import DiaDistResult
@@ -17,9 +19,17 @@ from SolveDiameterDistribution import DiaDistResult
 '''
 尚待解决的问题：
 1. 略慢...不过现在发现MCMC不用计算那么多步就能得到还不错的结果了，大概半小时就差不多了。
-   目前来看 draws=500, cores=8, chains=8, tune=2000 的设置就能得到比较满意的结果
-2. 在小直径处总会有很严重的上翘（0-200nm），可以理解，因为小直径粒子在光强上的贡献非常之小，因此数量上看起来很严重的上翘其实光强贡献可以忽略不计
-   因此，对于200nm以上的粒径计算结果非常好，然而有200nm以下粒径的结果就会被这个上翘完全掩盖。
+   目前来看 draws=500, cores=8, chains=8, tune=2000 的设置就能得到比较满意的结果；
+   draws=100, step=step, cores=8, chains=8, tune=500 就能够快速的得到一个和最终结果非常接近的结果了，大概计算6分钟左右。
+2. 在小直径处总会有很严重的上翘（0-200nm），可以理解，因为小直径粒子在光强上的贡献非常之小，因此数量上看起来很严重的上翘其实光强贡献可以忽略不计。
+   因此，对于200nm以上的粒径计算结果非常好，然而有200nm以下粒径的结果就会被这个上翘完全掩盖。也就是说，远离瑞利近似的粒径区间就能够得到比较满意的结果。
+   想到的解决方案：
+   a. 使用NNLS或者CONTIN计算得到的结果作为MCMC计算（ pm.sampling() ）的start参数.
+      结果并没有用
+   b. 添加一个限制条件，就是N[0]越小越好，这个限制条件可以通过在prior中使用一个矩阵 E0*N + ||L2*N|| （*为矩阵乘法）代替之前单纯的 ||L2*N|| 实现。
+      结果这种实现方式可以使得N[0]趋近于0，但是并不能解决200nm以内结果不准确的问题，以前的单纯上翘变成了一个很大的峰
+   c. 最后结果输出的时候不仅提供数量的结果，还提供和CONTIN相同的强度为纵轴的结果(即 Gamma*G(Gamma) )，这样至少按照传统的作图方式看起来就没问题了。
+
 
 未来计划:
 1. 能不能使用 NNLS 甚至 CONTIN 得到的结果来作为MCMC的起始值(start参数)
@@ -60,6 +70,14 @@ class multiAngleDls:
         #plt.style.use('seaborn')
         fig = plt.figure(figsize=(12,4))
         ax = fig.add_subplot(111)
+        
+        ##### 自定义cycler #####
+        # 使用 rainbow colormap
+        angleNum = self.angleNum
+        custom_cycler = cycler("color", plt.cm.rainbow(np.linspace(0,1,angleNum)))
+        ax.set_prop_cycle(custom_cycler)
+        #######################
+
         for i in range(len(self.dlsDataList)):
             dlsData = self.dlsDataList[i]
             tau = dlsData.tau
@@ -207,6 +225,21 @@ class multiAngleDls:
             self.result = DiaDistResult(self, method='NNLS')
         elif method == 'BayesianInference':
             self.result = DiaDistResult(self, method='BayesianInference', alpha=1, beta=1, mcmc_method='NUTS', *args, **kwargs)
+        
+        #### 计算90°或者最接近90°的光强权重的粒径分布，也就是CONTIN得到的那种 ####
+        N = self.result.N
+        Int = np.zeros_like(N)
+        C_theta_list = self.C_theta_list
+        angleList = np.array([dlsdata.angle for dlsdata in self.dlsDataList])
+        # 得到最接近90°的数据的索引
+        angleList = np.abs(angleList - 90)
+        i = np.where(angleList == angleList.min())[0][0]
+
+        C = C_theta_list[i]
+        Int = C * N
+        self.result.intensityWeightedDist = Int
+        ##################################################################
+
         return self.result
 
     def plotResult(self, show=True, figname=None, title=None):
@@ -214,6 +247,13 @@ class multiAngleDls:
         ax1 = fig.add_subplot(121)
         ax2 = fig.add_subplot(122)
         N = self.result.N
+
+        ##### 自定义cycler #####
+        # 使用 rainbow colormap
+        angleNum = self.angleNum
+        custom_cycler = cycler("color", plt.cm.rainbow(np.linspace(0,1,angleNum)))
+        ax1.set_prop_cycle(custom_cycler)
+        #######################
 
         for i in range(self.angleNum):
             dlsData = self.dlsDataList[i]
@@ -234,10 +274,18 @@ class multiAngleDls:
         ax1.legend(frameon=False)
         
         d = self.d
-        ax2.plot(d, N, '-')
+
+        # 画 intensity weighted distribution
+        ax3 = ax2.twinx()
+        ax3.plot(d, self.result.intensityWeightedDist, 'g--', label='intensity')
+        ax3.set_ylabel('Intensity', color='g')
+
+        # 画 number distribution
+        ax2.plot(d, N, 'b-', label='number')
         ax2.set_xlabel('d (nm)')
-        ax2.set_ylabel('Number')
-        ax2.set_title('Number Distribution')
+        ax2.set_ylabel('Number', color='b')
+
+        ax2.set_title('Number Distribution / Intensity weighted')
 
         if title:
             fig.suptitle(title)
@@ -251,9 +299,11 @@ class multiAngleDls:
 
         return self.result_fig
 
-    def saveResult(self, filename):
-        result_dict = {}
+    def saveResult(self, dirname, summary=True, trace=True, posterior=False):
+        os.mkdir(dirname)
+        name = os.path.basename(dirname)
 
+        result_dict = {}
         result_dict['d'] = self.d.tolist()
         result_dict['N'] = self.result.N.tolist()
         result_dict['g1_theta_list'] = [a.tolist() for a in self.g1_theta_list]
@@ -274,11 +324,40 @@ class multiAngleDls:
             dlsDataList.append(dic)
         result_dict['dlsDataList'] = dlsDataList
 
+        ### save data: json file ###
+        filename = name + '.json'
+        filepath = os.path.join(dirname, filename)
         jsontext = json.dumps(result_dict, indent=1)
-        with open(filename, 'w') as f:
+        with open(filepath, 'w') as f:
             f.write(jsontext)
+
+        ### save result plot ###
+        filename = name + '.svg'
+        filepath = os.path.join(dirname, filename)
+        self.plotResult(show=False, figname=filepath)
+
+        ### save summary ###
+        if summary:
+            filename = name + '_summary.csv'
+            filepath = os.path.join(dirname, filename)
+            df = az.summary(self.result.trace)
+            df.to_csv(filepath)
+
+        ### save trace plot ###
+        if trace:
+            filename = name + '_trace.svg'
+            filepath = os.path.join(dirname, filename)
+            az.plot_trace(self.result.trace)
+            plt.savefig(filepath)
+
+        ### save posterior ###
+        if posterior:
+            filename = name + '_posterior.svg'
+            filepath = os.path.join(dirname, filename)
+            az.plot_posterior(self.result.trace)
+            plt.savefig(filepath)
         
-        return 'data saved in {}'.format(filename)
+        return 'data saved in {}'.format(dirname)
 
     
     def loadResult(self, filename):
@@ -295,9 +374,9 @@ if __name__ == "__main__":
     #filelist = ['test_data/PS_100nm_90degree.dat']
     data = multiAngleDls(filelist, d_min=10, d_max=500)
     #data.d = np.array([100, 220, 360])
-    data.plotOriginalData()
+    #data.plotOriginalData()
     data.solveDiaDist(method='NNLS')
-    data.plotResult(show=False, figname='test.png')
+    data.plotResult(figname='test.png')
     # method='BayesianInference' or 'NNLs'
 
     # 实际的粒径分布情况
