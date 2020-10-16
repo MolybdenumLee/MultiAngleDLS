@@ -237,7 +237,7 @@ class multiAngleDls:
 
         C = C_theta_list[i]
         Int = C * N
-        self.result.intensityWeightedDist = Int
+        self.result.intensity_weighted_dist = Int
         ##################################################################
 
         return self.result
@@ -277,7 +277,7 @@ class multiAngleDls:
 
         # 画 intensity weighted distribution
         ax3 = ax2.twinx()
-        ax3.plot(d, self.result.intensityWeightedDist, 'g--', label='intensity')
+        ax3.plot(d, self.result.intensity_weighted_dist, 'g--', label='intensity')
         ax3.set_ylabel('Intensity', color='g')
 
         # 画 number distribution
@@ -307,6 +307,7 @@ class multiAngleDls:
         result_dict = {}
         result_dict['d'] = self.d.tolist()
         result_dict['N'] = self.result.N.tolist()
+        result_dict['intensity_weighted_dist'] = self.result.intensity_weighted_dist.tolist()
         result_dict['g1_theta_list'] = [a.tolist() for a in self.g1_theta_list]
         result_dict['g1square_theta_list'] = [a.tolist() for a in self.g1square_theta_list]
         result_dict['G_theta_list'] = [a.tolist() for a in self.G_theta_list]
