@@ -303,6 +303,7 @@ class multiAngleDls:
         os.mkdir(dirname)
         name = os.path.basename(dirname)
 
+        #### gether all the info and data in 1 dictionary ####
         result_dict = {}
         result_dict['d'] = self.d.tolist()
         result_dict['N'] = self.result.N.tolist()
@@ -323,6 +324,7 @@ class multiAngleDls:
                     dic[key] = dic[key].tolist()
             dlsDataList.append(dic)
         result_dict['dlsDataList'] = dlsDataList
+        ########################################################
 
         ### save data: json file ###
         filename = name + '.json'
