@@ -32,7 +32,8 @@ from SolveDiameterDistribution import DiaDistResult
 
 
 未来计划:
-1. 能不能使用 NNLS 甚至 CONTIN 得到的结果来作为MCMC的起始值(start参数)
+(划掉)1. 能不能使用 NNLS 甚至 CONTIN 得到的结果来作为MCMC的起始值(start参数)
+     !(得到的结果并没有什么区别，不过可以作为一个和以往研究的区别，可以考虑加进去)
 '''
 
 
@@ -299,15 +300,17 @@ class multiAngleDls:
 
         return self.result_fig
 
-    def saveResult(self, dirname, summary=True, trace=True, posterior=False):
+    def saveResult(self, dirname, summary=True, trace=True, posterior=False, figtitle=None, figformat='svg'):
         os.mkdir(dirname)
         name = os.path.basename(dirname)
 
         #### gether all the info and data in 1 dictionary ####
         result_dict = {}
         result_dict['d'] = self.d.tolist()
-        result_dict['N'] = self.result.N.tolist()
-        result_dict['intensity_weighted_dist'] = self.result.intensity_weighted_dist.tolist()
+        result_dict['result.N'] = self.result.N.tolist()
+        result_dict['result.intensity_weighted_dist'] = self.result.intensity_weighted_dist.tolist()
+        result_dict['result.method'] = self.result.method
+        result_dict['result.params'] = self.result.params
         result_dict['g1_theta_list'] = [a.tolist() for a in self.g1_theta_list]
         result_dict['g1square_theta_list'] = [a.tolist() for a in self.g1square_theta_list]
         result_dict['G_theta_list'] = [a.tolist() for a in self.G_theta_list]
@@ -335,9 +338,10 @@ class multiAngleDls:
             f.write(jsontext)
 
         ### save result plot ###
-        filename = name + '.svg'
+        filename = name + '.' + figformat
         filepath = os.path.join(dirname, filename)
-        self.plotResult(show=False, figname=filepath)
+        if figtitle:
+            self.plotResult(show=False, figname=filepath, title=figtitle)
 
         ### save summary ###
         if summary:
@@ -348,14 +352,14 @@ class multiAngleDls:
 
         ### save trace plot ###
         if trace:
-            filename = name + '_trace.svg'
+            filename = name + '_trace.' + figformat
             filepath = os.path.join(dirname, filename)
             az.plot_trace(self.result.trace)
             plt.savefig(filepath)
 
         ### save posterior ###
         if posterior:
-            filename = name + '_posterior.svg'
+            filename = name + '_posterior.' + figformat
             filepath = os.path.join(dirname, filename)
             az.plot_posterior(self.result.trace)
             plt.savefig(filepath)

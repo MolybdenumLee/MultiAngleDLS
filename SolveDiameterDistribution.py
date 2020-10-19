@@ -52,6 +52,7 @@ class DiaDistResult:
         self.params['BayesianInference']['alpha'] = alpha
         self.params['BayesianInference']['beta'] = beta
         self.params['BayesianInference']['mcmc_method'] = mcmc_method
+        self.params['BayesianInference'].update(kwargs)
 
         # 2 numbers that may be used directly
         n = data.d.size                       # d number
