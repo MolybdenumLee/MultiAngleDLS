@@ -300,7 +300,7 @@ class multiAngleDls:
 
         return self.result_fig
 
-    def saveResult(self, dirname, summary=True, trace=True, posterior=False, figtitle=None, figformat='svg'):
+    def saveResult(self, dirname, summary=True, trace=True, posterior=True, figtitle=None, figformat='svg'):
         os.mkdir(dirname)
         name = os.path.basename(dirname)
 
@@ -340,8 +340,7 @@ class multiAngleDls:
         ### save result plot ###
         filename = name + '.' + figformat
         filepath = os.path.join(dirname, filename)
-        if figtitle:
-            self.plotResult(show=False, figname=filepath, title=figtitle)
+        self.plotResult(show=False, figname=filepath, title=figtitle)
 
         ### save summary ###
         if summary:
