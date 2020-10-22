@@ -25,10 +25,12 @@ from SolveDiameterDistribution import DiaDistResult
    因此，对于200nm以上的粒径计算结果非常好，然而有200nm以下粒径的结果就会被这个上翘完全掩盖。也就是说，远离瑞利近似的粒径区间就能够得到比较满意的结果。
    想到的解决方案：
    a. 使用NNLS或者CONTIN计算得到的结果作为MCMC计算（ pm.sampling() ）的start参数.
-      结果并没有用
+      ！结果并没有用
    b. 添加一个限制条件，就是N[0]越小越好，这个限制条件可以通过在prior中使用一个矩阵 E0*N + ||L2*N|| （*为矩阵乘法）代替之前单纯的 ||L2*N|| 实现。
       结果这种实现方式可以使得N[0]趋近于0，但是并不能解决200nm以内结果不准确的问题，以前的单纯上翘变成了一个很大的峰
    c. 最后结果输出的时候不仅提供数量的结果，还提供和CONTIN相同的强度为纵轴的结果(即 Gamma*G(Gamma) )，这样至少按照传统的作图方式看起来就没问题了。
+   d. 不使用 pN，而是使用 p log(N)，通过对数的分布来使得巨大的数量差异变成同一数量级的差异。
+      ！然而结果也不是很好，由于失去 N>=0 的限制，log(N)的取样变化非常大，结果也不是很好。
 
 
 未来计划:
@@ -47,27 +49,30 @@ Int = intensity
 
 class multiAngleDls:
 
-    def __init__(self, filelist, filetype='brookhaven dat file', d_min=1, d_max=1e3, d_num=20, log_d=False, auto_process=True):
+    def __init__(self, filelist, filetype='brookhaven dat file', d_min=1, d_max=1e3, d_num=20, log_d=False, auto_process=True, saved_json_file=None):
         # d_min, d_max in nanometer
 
-        # read the multi-angle DLS data from a series of dat files
-        self.dlsDataList = []
-        for file in filelist:
-            self.dlsDataList.append(DlsDataParser.DlsData(file))
-        self.angleNum = len(self.dlsDataList)
-        # generate diameter array
-        self.log_d = log_d
-        if log_d:
-            log_d_min = np.log10(d_min)
-            log_d_max = np.log10(d_max)
-            self.d = np.logspace(log_d_min, log_d_max, num=d_num, base=10)
+        if saved_json_file:
+            self.loadResult(saved_json_file)
         else:
-            self.d = np.linspace(d_min, d_max, num=d_num)
-        
-        if auto_process:
-            self._multiAngleProcess()
+            # read the multi-angle DLS data from a series of dat files
+            self.dlsDataList = []
+            for file in filelist:
+                self.dlsDataList.append(DlsDataParser.DlsData(file))
+            self.angleNum = len(self.dlsDataList)
+            # generate diameter array
+            self.log_d = log_d
+            if log_d:
+                log_d_min = np.log10(d_min)
+                log_d_max = np.log10(d_max)
+                self.d = np.logspace(log_d_min, log_d_max, num=d_num, base=10)
+            else:
+                self.d = np.linspace(d_min, d_max, num=d_num)
+            
+            if auto_process:
+                self._multiAngleProcess()
 
-    def plotOriginalData(self, plot='g1square'):
+    def plotOriginalData(self, plot='g1square', show=True, figname=None):
         #plt.style.use('seaborn')
         fig = plt.figure(figsize=(12,4))
         ax = fig.add_subplot(111)
@@ -93,7 +98,11 @@ class multiAngleDls:
         ax.legend()
         ax.set_xscale('log')
         ax.set_xlabel(r'$\tau \; (ms)$')
-        plt.show()
+
+        if show:
+            plt.show()
+        if figname:
+            fig.savefig(figname)
 
     def _calcMieScatt(self, angle, m_particle, wavelength, diameter, nMedium, polarization='perpendicular'):
         # angle in radian
@@ -328,7 +337,7 @@ class multiAngleDls:
                     dic[key] = dic[key].tolist()
             dlsDataList.append(dic)
         result_dict['dlsDataList'] = dlsDataList
-        ########################################################
+        #########################################################
 
         ### save data: json file ###
         filename = name + '.json'
@@ -367,15 +376,49 @@ class multiAngleDls:
 
     
     def loadResult(self, filename):
+        
+        def restore_array_list(List):
+            newlist = []
+            for item in List:
+                newlist.append(np.array(item))
+            return newlist
+
+
         with open(filename, 'r') as f:
             jsontext = f.read()
         result_dict = json.loads(jsontext)
-        '''
-        to be continued !!!
-        '''
-            
+        
+        self.d = np.array(result_dict['d'])
+        self.result = DiaDistResult(self, method=result_dict['result.method'], auto=False)
+        self.result.N = np.array(result_dict['result.N'])
+        self.result.intensity_weighted_dist = np.array(result_dict['result.intensity_weighted_dist'])
+        self.result.params = result_dict['result.params']
+        self.g1_theta_list = restore_array_list(result_dict['g1_theta_list'])
+        self.g1square_theta_list = restore_array_list(result_dict['g1square_theta_list'])
+        self.G_theta_list = restore_array_list(result_dict['G_theta_list'])
+        self.F_theta_list = restore_array_list(result_dict['F_theta_list'])
+        self.C_theta_list = restore_array_list(result_dict['C_theta_list'])
+        self.k_star_theta_list = restore_array_list(result_dict['k_star_theta_list'])
+        self.g1_R = np.array(result_dict['g1_R'])
+        self.G_R = np.array(result_dict['G_R'])
+
+        self.dlsDataList = []
+        for dlsDataDict in result_dict['dlsDataList']:
+            dlsData = DlsDataParser.DlsData('', auto=False)
+            for key in dlsDataDict.keys():
+                exec('dlsData.{} = dlsDataDict[\'{}\']'.format(key, key))
+            dlsData.tau = np.array(dlsData.tau)
+            dlsData.G2 = np.array(dlsData.G2)
+            dlsData.Ctau = np.array(dlsData.Ctau)
+            dlsData.g1square = np.array(dlsData.g1square)
+            dlsData.g1 = np.array(dlsData.g1)
+            self.dlsDataList.append(dlsData)
+        self.angleNum = len(self.dlsDataList)
+
+        return 'restored saved result'
 
 if __name__ == "__main__":
+    '''
     filelist = ['test_data/PS_80-200-300nm=2-1-1_{}.dat'.format(i+1) for i in range(6,13)]
     #filelist = ['test_data/PS_100nm_90degree.dat']
     data = multiAngleDls(filelist, d_min=10, d_max=500)
@@ -389,6 +432,10 @@ if __name__ == "__main__":
     #data.N = 3 * np.array([50, 3, 1])
     #data.N_star = 18000*np.array([105, 3, 1])
     #data.plotResult_g1()
+    '''
+
+    data = multiAngleDls('', saved_json_file='sim_data/test/test.json')
+    data.plotResult(figname='test.jpg')
 
 
 
